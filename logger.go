@@ -22,6 +22,7 @@ type Zap struct {
 
 var l = &Logger{}
 
+// Init инициализация логгера, передаем в режиме дебага или нет
 func Init(debug bool) {
 	lvl := "info"
 	isDev := false
