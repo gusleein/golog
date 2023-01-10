@@ -1,4 +1,4 @@
-module github.com/ndmsystems/golog
+module github.com/gusleein/golog
 
 go 1.17
 
