@@ -196,17 +196,17 @@ func Errorw(msg string, args ...interface{}) {
 	l.zap.Errorw(msg, args...)
 }
 
-// Warningf logs a message using WARNING as log level.
+// Warningw logs a message using WARNING as log level.
 func Warningw(msg string, args ...interface{}) {
 	l.zap.Warnw(msg, args...)
 }
 
-// Infof logs a message using INFO as log level.
+// Infow logs a message using INFO as log level.
 func Infow(msg string, args ...interface{}) {
 	l.zap.Infow(msg, args...)
 }
 
-// Debugf logs a message using DEBUG as log level.
+// Debugw logs a message using DEBUG as log level.
 func Debugw(msg string, args ...interface{}) {
 	l.zap.Debugw(msg, args...)
 }
