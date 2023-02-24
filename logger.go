@@ -23,12 +23,17 @@ type Zap struct {
 var l = &Logger{}
 
 // Init инициализация логгера, передаем в режиме дебага или нет
-func Init(debug bool) {
+// encoding - json | console
+func Init(debug bool, encoding string) {
+	if len(encoding) > 0 && encoding != "json" && encoding != "console" {
+		encoding = "json"
+	}
+
+	// setup logs
 	lvl := "info"
 	isDev := false
 	disableStack := true
 
-	// setup logs
 	if debug {
 		lvl = "debug"
 		isDev = true
@@ -44,7 +49,7 @@ func Init(debug bool) {
 			Initial:    100,
 			Thereafter: 100,
 		},
-		Encoding: "json",
+		Encoding: encoding,
 		EncoderConfig: zapcore.EncoderConfig{
 			TimeKey:        "ts",
 			LevelKey:       "level",
