@@ -84,7 +84,7 @@ func Init(debug bool, encoding string) {
 func callerEncoder(caller zapcore.EntryCaller, enc zapcore.PrimitiveArrayEncoder) {
 	arr := strings.Split(caller.Function, ".")
 	funName := arr[len(arr)-1]
-	enc.AppendString(caller.TrimmedPath() + "." + funName + "()")
+	enc.AppendString(caller.TrimmedPath() + " " + funName + "()")
 }
 
 func stampTimeEncoder(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
