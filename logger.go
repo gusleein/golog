@@ -51,6 +51,9 @@ func Init(debug bool, encoding Encoding) {
 		encodingStr = "json"
 	case Console:
 		encodingStr = "console"
+	default:
+		fmt.Println("Logger init error: invalid encoding - 'console' or 'json'")
+		return
 	}
 
 	config := &zap.Config{
