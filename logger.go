@@ -9,6 +9,13 @@ import (
 	"time"
 )
 
+type Encoding string
+
+const (
+	Json    Encoding = "json"
+	Console Encoding = "console"
+)
+
 type Logger struct {
 	level Level
 	zap   *zap.SugaredLogger
@@ -24,10 +31,7 @@ var l = &Logger{}
 
 // Init инициализация логгера, передаем в режиме дебага или нет
 // encoding - json | console
-func Init(debug bool, encoding string) {
-	if len(encoding) > 0 && encoding != "json" && encoding != "console" {
-		encoding = "json"
-	}
+func Init(debug bool, encoding Encoding) {
 
 	// setup logs
 	lvl := "info"
@@ -40,6 +44,15 @@ func Init(debug bool, encoding string) {
 		disableStack = false
 	}
 
+	// setup encoding
+	var encodingStr string
+	switch encoding {
+	case Json:
+		encodingStr = "json"
+	case Console:
+		encodingStr = "console"
+	}
+
 	config := &zap.Config{
 		Level:             LevelToAtomic(ParseLevel(lvl)),
 		Development:       isDev,
@@ -49,7 +62,7 @@ func Init(debug bool, encoding string) {
 			Initial:    100,
 			Thereafter: 100,
 		},
-		Encoding: encoding,
+		Encoding: encodingStr,
 		EncoderConfig: zapcore.EncoderConfig{
 			TimeKey:        "ts",
 			LevelKey:       "level",
