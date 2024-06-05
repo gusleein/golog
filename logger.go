@@ -2,10 +2,9 @@ package log
 
 import (
 	"fmt"
+	"github.com/pkg/errors"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"os"
-	"strings"
 	"time"
 )
 
@@ -17,8 +16,10 @@ const (
 )
 
 type Logger struct {
-	level Level
-	zap   *zap.SugaredLogger
+	level    Level
+	zap      *zap.SugaredLogger
+	config   *zap.Config
+	baseOpts []zap.Option
 }
 type Level zapcore.Level
 
@@ -27,11 +28,13 @@ type Zap struct {
 	client      *zap.Logger
 }
 
-var l = &Logger{}
+var l *Logger
 
 // Init инициализация логгера, передаем в режиме дебага или нет
 // encoding - json | console
-func Init(debug bool, encoding Encoding) {
+func Init(debug, showTime bool, encoding Encoding) {
+	l = new(Logger)
+	var err error
 
 	// setup logs
 	lvl := "info"
@@ -46,18 +49,36 @@ func Init(debug bool, encoding Encoding) {
 
 	// setup encoding
 	var encodingStr string
+	encConf := zapcore.EncoderConfig{
+		FunctionKey:    zapcore.OmitKey,
+		EncodeTime:     stampTimeEncoder,
+		EncodeDuration: zapcore.SecondsDurationEncoder,
+		EncodeCaller:   callerEncoder,
+		EncodeLevel:    zapcore.CapitalLevelEncoder,
+		LineEnding:     zapcore.DefaultLineEnding,
+		LevelKey:       "level",
+		NameKey:        "logger",
+		CallerKey:      "caller",
+		MessageKey:     "msg",
+		StacktraceKey:  "stacktrace",
+	}
+
+	if showTime {
+		encConf.TimeKey = "ts"
+	}
+
 	switch encoding {
 	case Json:
 		encodingStr = "json"
 	case Console:
 		encodingStr = "console"
+		encConf.ConsoleSeparator = " "
 	default:
 		fmt.Println("Logger init error: invalid encoding - 'console' or 'json'")
-		return
 	}
 
-	config := &zap.Config{
-		Level:             LevelToAtomic(ParseLevel(lvl)),
+	l.config = &zap.Config{
+		Level:             levelToAtomic(parseLevel(lvl)),
 		Development:       isDev,
 		DisableCaller:     false,
 		DisableStacktrace: disableStack,
@@ -65,42 +86,38 @@ func Init(debug bool, encoding Encoding) {
 			Initial:    100,
 			Thereafter: 100,
 		},
-		Encoding: encodingStr,
-		EncoderConfig: zapcore.EncoderConfig{
-			TimeKey:        "ts",
-			LevelKey:       "level",
-			NameKey:        "logger",
-			CallerKey:      "caller",
-			FunctionKey:    zapcore.OmitKey,
-			MessageKey:     "msg",
-			StacktraceKey:  "stacktrace",
-			LineEnding:     zapcore.DefaultLineEnding,
-			EncodeLevel:    zapcore.CapitalLevelEncoder,
-			EncodeTime:     stampTimeEncoder,
-			EncodeDuration: zapcore.SecondsDurationEncoder,
-			EncodeCaller:   callerEncoder,
-		},
+		Encoding:      encodingStr,
+		EncoderConfig: encConf,
 		//OutputPaths:      []string{"/var/log/syslog"},
 		//ErrorOutputPaths: []string{"/var/log/syslog"},
 		OutputPaths:      []string{"stdout"},
 		ErrorOutputPaths: []string{"stdout"},
 	}
-	lg, err := config.Build(zap.AddCallerSkip(1))
-	if err != nil {
-		fmt.Println("Logger init error: ", err)
-		return
-	}
 
-	l = &Logger{
-		level: ParseLevel(lvl),
-		zap:   lg.Sugar(),
+	l.baseOpts = append(l.baseOpts, zap.AddCallerSkip(1))
+	l.level = parseLevel(lvl)
+	err = build()
+	if err != nil {
+		panic(err)
 	}
 }
 
+func build(opts ...zap.Option) (err error) {
+	opts = append(l.baseOpts, opts...)
+
+	lg, err := l.config.Build(opts...)
+	if err != nil {
+		Error(errors.Wrap(err, "Logger init error"))
+		return
+	}
+	l.zap = lg.Sugar()
+	return
+}
+
 func callerEncoder(caller zapcore.EntryCaller, enc zapcore.PrimitiveArrayEncoder) {
-	arr := strings.Split(caller.Function, ".")
-	funName := arr[len(arr)-1]
-	enc.AppendString(caller.TrimmedPath() + " " + funName + "()")
+	//arr := strings.Split(caller.Function, ".")
+	//funName := arr[len(arr)-1]
+	enc.AppendString(caller.TrimmedPath())
 }
 
 func stampTimeEncoder(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
@@ -117,11 +134,11 @@ func stampTimeEncoder(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
 	enc.AppendString(t.Format(format))
 }
 
-func LevelToAtomic(lvl Level) zap.AtomicLevel {
+func levelToAtomic(lvl Level) zap.AtomicLevel {
 	return zap.NewAtomicLevelAt(zapcore.Level(lvl))
 }
 
-func ParseLevel(lvl string) (level Level) {
+func parseLevel(lvl string) (level Level) {
 	switch lvl {
 	case "debug":
 		level = Level(zap.DebugLevel)
@@ -139,27 +156,18 @@ func ParseLevel(lvl string) (level Level) {
 	return
 }
 
-// Fatal followed by a call to os.Exit(1).
-func Fatal(msg ...interface{}) {
-	l.zap.Fatal(msg)
-	os.Exit(1)
+// LogLevel return current log level. "debug" = -1 or "info" = 0
+func LogLevel() int {
+	return int(l.level)
 }
 
-// Fatalf followed by a call to os.Exit(1).
-func Fatalf(format string, args ...interface{}) {
-	msg := fmt.Sprintf(format, args...)
-	l.zap.Fatal(msg)
-	os.Exit(1)
+// Fatal followed by a call to os.Exit(1).
+func Fatal(msg ...interface{}) {
+	l.zap.Fatal(msg...)
 }
 
 // Panic followed by a call to panic().
 func Panic(msg ...interface{}) {
-	l.zap.Panic(msg)
-}
-
-// Panicf followed by a call to panic().
-func Panicf(format string, args ...interface{}) {
-	msg := fmt.Sprintf(format, args...)
 	l.zap.Panic(msg)
 }
 
@@ -168,20 +176,8 @@ func Error(msg ...interface{}) {
 	l.zap.Error(msg)
 }
 
-// Errorf logs a message using ERROR as log level.
-func Errorf(format string, args ...interface{}) {
-	msg := fmt.Sprintf(format, args...)
-	l.zap.Error(msg)
-}
-
 // Warning logs a message using WARNING as log level.
 func Warning(msg ...interface{}) {
-	l.zap.Warn(msg)
-}
-
-// Warningf logs a message using WARNING as log level.
-func Warningf(format string, args ...interface{}) {
-	msg := fmt.Sprintf(format, args...)
 	l.zap.Warn(msg)
 }
 
@@ -190,45 +186,62 @@ func Info(msg ...interface{}) {
 	l.zap.Info(msg)
 }
 
-// Infof logs a message using INFO as log level.
-func Infof(format string, args ...interface{}) {
-	msg := fmt.Sprintf(format, args...)
-	l.zap.Info(msg)
-}
-
 // Debug logs a message using DEBUG as log level.
 func Debug(msg ...interface{}) {
 	l.zap.Debug(msg)
 }
 
+// Fatalf followed by a call to os.Exit(1).
+func Fatalf(format string, args ...interface{}) {
+	l.zap.Fatalf(format, args...)
+}
+
+// Panicf followed by a call to panic().
+func Panicf(format string, args ...interface{}) {
+	l.zap.Panicf(format, args...)
+}
+
+// Errorf logs a message using ERROR as log level.
+func Errorf(format string, args ...interface{}) {
+	l.zap.Errorf(format, args...)
+}
+
+// Warningf logs a message using WARNING as log level.
+func Warningf(format string, args ...interface{}) {
+	l.zap.Warnf(format, args...)
+}
+
+// Infof logs a message using INFO as log level.
+func Infof(format string, args ...interface{}) {
+	l.zap.Infof(format, args...)
+}
+
 // Debugf logs a message using DEBUG as log level.
 func Debugf(format string, args ...interface{}) {
-	msg := fmt.Sprintf(format, args...)
-	l.zap.Debug(msg)
+	l.zap.Debugf(format, args...)
 }
 
 // Fatalw followed by a call to os.Exit(1).
-func Fatalw(msg string, args ...interface{}) {
-	l.zap.Fatalw(msg, args...)
-	os.Exit(1)
+func Fatalw(msg string, keyAndValues ...interface{}) {
+	l.zap.Fatalw(msg, keyAndValues...)
 }
 
 // Errorw logs a message using ERROR as log level.
-func Errorw(msg string, args ...interface{}) {
-	l.zap.Errorw(msg, args...)
+func Errorw(msg string, keyAndValues ...interface{}) {
+	l.zap.Errorw(msg, keyAndValues...)
 }
 
 // Warningw logs a message using WARNING as log level.
-func Warningw(msg string, args ...interface{}) {
-	l.zap.Warnw(msg, args...)
+func Warningw(msg string, keyAndValues ...interface{}) {
+	l.zap.Warnw(msg, keyAndValues...)
 }
 
 // Infow logs a message using INFO as log level.
-func Infow(msg string, args ...interface{}) {
-	l.zap.Infow(msg, args...)
+func Infow(msg string, keyAndValues ...interface{}) {
+	l.zap.Infow(msg, keyAndValues...)
 }
 
 // Debugw logs a message using DEBUG as log level.
-func Debugw(msg string, args ...interface{}) {
-	l.zap.Debugw(msg, args...)
+func Debugw(msg string, keyAndValues ...interface{}) {
+	l.zap.Debugw(msg, keyAndValues...)
 }
